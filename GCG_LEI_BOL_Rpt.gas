@@ -1,0 +1,116 @@
+Program.Sub.ScreenSU.Start
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Variable.Global.sTerminal.Declare(String)
+Variable.Global.sReportID.Declare(String)
+Variable.UDT.uBOL.Define("sOrder_NO",String,Cust_Order_NO_1)
+Variable.UDT.uBOL.Define("sRecType",String,Rec_Type)
+Variable.UDT.uBOL.Define("sWeight",String,Carr_Weight_1)
+Variable.uGlobal.uBOL.Declare("uBOL")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+V.Local.sSql.Declare(String)
+V.Local.iCount.Declare(Long)
+V.Local.iTotal.Declare(Float)
+V.Local.iGross.Declare(Float)
+V.Local.iNet.Declare(Float)
+V.Local.iTare.Declare(Float)
+V.Local.iBale.Declare(Float)
+V.Local.iBaleT.Declare(Float)
+V.Local.sOrder.Declare(String)
+
+F.Intrinsic.Control.If(V.Caller.Hook,=,16090)
+	F.Intrinsic.Control.If(V.Passed.009001,=,"000066")
+		F.ODBC.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+		V.Global.sReportID.Set("000066")
+		V.Global.sTerminal.Set(V.Caller.Terminal)
+		'Get the information from the BI Table.
+		F.Intrinsic.String.Concat("Select Carr_Weight_1, Rec_Type, Cust_Order_No_1 From BI_Waybill where TRMNL = '",V.Global.sTerminal.Trim,"' and RPTID = '",V.Global.sReportID.Trim,"' and Rec_Type = 'L'",V.Local.sSql)
+		F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSql)
+		F.Intrinsic.Variable.LoadUDTFromRecordset("conx","rst","v.uGlobal.uBOL",False)
+		F.ODBC.conx!rst.Close
+		F.intrinsic.Control.For(V.Local.iCount,0,V.uGlobal.uBOL.UBound,1)
+			F.Intrinsic.String.Split(V.uGlobal.uBOL(v.Local.iCount)!sOrder_NO.Trim,"-",V.Local.sOrder)
+			F.Intrinsic.String.Concat(" Select Count (Lot) as Bale from GCG_LEI_Ship where Order_No = '",V.Local.sOrder(1).Trim,"' and Order_Suffix = '",V.Local.sOrder(2).Trim,"' and Packing_No = '",V.Local.sOrder(0).Trim,"'",V.Local.sSql)
+			F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSql)
+			F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+				V.Local.iBale.Set(V.ODBC.conx!rst.FieldValTrim!Bale)
+			F.Intrinsic.Control.Else
+				V.Local.iBale.Set(0)
+			F.Intrinsic.Control.EndIf
+			F.ODBC.conx!rst.Close
+
+			F.Intrinsic.String.Concat("Select Sum(Net) as Net from GCG_LEI_Ship where Order_No = '",V.Local.sOrder(1).Trim,"' and Order_Suffix = '",V.Local.sOrder(2).Trim,"' and Packing_No = '",V.Local.sOrder(0).Trim,"'",V.Local.sSql)
+			F.ODBC.Connection!conx.OpenLocalRecordsetRO("rst",V.Local.sSql)
+			F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+				V.Local.iNet.Set(V.ODBC.conx!rst.FieldValTrim!Net)
+				F.Intrinsic.String.Concat("Select Sum(Tare) as Tare from GCG_LEI_Ship where Order_No = '",V.Local.sOrder(1).Trim,"' and Order_Suffix = '",V.Local.sOrder(2).Trim,"' and Packing_No = '",V.Local.sOrder(0).Trim,"'",V.Local.sSql)
+				F.ODBC.Connection!conx.OpenLocalRecordsetRO("rstT",V.Local.sSql)
+				F.Intrinsic.Control.If(V.ODBC.conx!rstT.EOF,=,False)
+					V.Local.iTare.Set(V.ODBC.conx!rstT.FieldValTrim!Tare)
+				F.Intrinsic.Control.Else
+					V.Local.iTare.Set(0)
+				F.Intrinsic.Control.EndIf
+				F.ODBC.conx!rstT.Close
+				F.Intrinsic.Math.Add(V.Local.iNet,V.Local.iTare,V.Local.iGross)
+				V.uGlobal.uBOL(v.Local.iCount)!sWeight.Set(V.Local.iGross)
+				F.Intrinsic.Math.Add(V.Local.iTotal,V.Local.iGross,V.Local.iTotal)
+				F.Intrinsic.Math.Add(V.Local.iBaleT,V.Local.iBale,V.Local.iBaleT)
+			F.Intrinsic.Control.EndIf
+			F.ODBC.conx!rst.Close
+
+			F.Intrinsic.String.Concat("Select Carr_Tot_Pkg_Qty, Carr_PKG_Qty_1,  Carr_Weight_1, Carr_Tot_WGHT from BI_Waybill where TRMNL = '",V.Global.sTerminal.Trim,"' and RPTID = '",V.Global.sReportID.Trim,"' and Cust_Order_No_1 = '",V.uGlobal.uBOL(v.Local.iCount)!sOrder_NO.Trim,"' and Rec_Type = '",V.uGlobal.uBOL(v.Local.iCount)!sRecType.Trim,"'",V.Local.sSQL)
+			F.ODBC.Connection!conx.OpenLocalRecordsetRW("rst",V.Local.sSql)
+			F.ODBC.conx!rst.Set!Carr_Weight_1(V.uGlobal.uBOL(v.Local.iCount)!sWeight.Trim)
+			F.ODBC.conx!rst.Set!Carr_Tot_WGHT(V.Local.iTotal)
+			F.ODBC.conx!rst.Set!Carr_PKG_Qty_1(V.Local.iBale)
+			F.ODBC.conx!rst.Set!Carr_Tot_Pkg_Qty(V.Local.iBaleT)
+			F.ODBC.conx!rst.Update
+			F.ODBC.conx!rst.Close
+		F.Intrinsic.Control.Next(V.Local.iCount)
+	F.ODBC.Connection!conx.Close
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_LEI_BOL_Rpt.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub(Unload)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.unload.Start
+F.Intrinsic.Control.SetErrorHandler("unload_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+F.Intrinsic.Control.End
+
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("unload_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_LEI_BOL_Rpt.gas",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.unload.End
+
+
